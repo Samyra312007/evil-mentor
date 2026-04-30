@@ -119,6 +119,8 @@ class MessageHandler:
             return await self.handle_train(args, user_context)
         elif cmd == "grade":
             return await self.handle_grade(user_context)
+        elif cmd == "submit":
+            return await self.handle_submit(args, user_context)
         elif cmd == "stats":
             return await self.handle_stats(user_context)
         elif cmd == "leaderboard":
@@ -269,8 +271,21 @@ class MessageHandler:
             import os
 
             source_files = []
+            # Skip directories and files that are bad injection targets
+            skip_dirs = {".git", ".venv", "venv", "__pycache__", "node_modules", ".kiro"}
+            skip_prefixes = ("test_", "conftest")
+
             for root, _dirs, files in os.walk(repo_path):
+                # Skip hidden/virtual directories
+                rel_root = os.path.relpath(root, repo_path)
+                if any(part in skip_dirs for part in rel_root.split(os.sep)):
+                    continue
+
                 for fname in files:
+                    # Skip test files — they have complex imports that break on injection
+                    if fname.startswith(skip_prefixes):
+                        continue
+
                     fpath = os.path.join(root, fname)
                     rel_path = os.path.relpath(fpath, repo_path)
                     ext = os.path.splitext(fname)[1].lower()
@@ -286,6 +301,9 @@ class MessageHandler:
                         try:
                             with open(fpath, "r", encoding="utf-8", errors="ignore") as f:
                                 content = f.read()
+                            # Skip very small files (< 5 lines) — not enough context
+                            if content.count("\n") < 5:
+                                continue
                             source_files.append(
                                 SourceFile(path=rel_path, content=content, language=lang)
                             )
@@ -387,6 +405,109 @@ class MessageHandler:
         )
 
     # ------------------------------------------------------------------
+    # /submit — user reports findings manually
+    # ------------------------------------------------------------------
+
+    async def handle_submit(
+        self,
+        args: list[str],
+        user_context: UserContext,
+    ) -> ChatResponse:
+        """Submit a finding for the current training session.
+
+        Usage: /submit <filename_without_extension> <line_number>
+
+        The system auto-detects the vulnerability type by matching
+        against the injection manifest.
+
+        Args:
+            args: ``[filename, line_number]``
+            user_context: Caller identity.
+        """
+        if len(args) < 2:
+            return ChatResponse(
+                text=(
+                    "Usage: /submit <filename> <line_number>\n\n"
+                    "Example: /submit server 302\n"
+                    "Example: /submit config 26\n\n"
+                    "Just the file name (no extension) and the line number."
+                )
+            )
+
+        filename = args[0].lower()
+        try:
+            line_number = int(args[1])
+        except ValueError:
+            return ChatResponse(text=f"Invalid line number: {args[1]}")
+
+        user = await self._get_or_create_user(user_context)
+        session = await self._session_repo.get_latest_for_user(user.id)
+        if session is None:
+            return ChatResponse(
+                text="No active training session. Start one with /train."
+            )
+
+        # Find the matching injection by filename and line proximity
+        injections = await self._injection_repo.get_by_session(session.id)
+        matched_injection = None
+        for inj in injections:
+            # Match filename without extension
+            import os
+            inj_basename = os.path.splitext(os.path.basename(inj.file_path))[0].lower()
+            if inj_basename == filename and abs(inj.line_number - line_number) <= 10:
+                matched_injection = inj
+                break
+
+        # Build the finding — use matched type if found, otherwise generic
+        if matched_injection:
+            vuln_type = matched_injection.vuln_type.value
+            file_path = matched_injection.file_path
+        else:
+            vuln_type = "UNKNOWN"
+            # Try to find the full file path from any injection with matching name
+            file_path = filename
+            for inj in injections:
+                import os
+                inj_basename = os.path.splitext(os.path.basename(inj.file_path))[0].lower()
+                if inj_basename == filename:
+                    file_path = inj.file_path
+                    break
+
+        finding = ScanFinding(
+            finding_type=vuln_type,
+            severity="HIGH",
+            file_path=file_path,
+            line_number=line_number,
+        )
+
+        # Get existing findings or create new list
+        existing = await self._scan_result_repo.get_by_session(session.id)
+        if existing:
+            findings_list = existing["raw_output"]
+            findings_list.append(finding.model_dump())
+            await self._scan_result_repo.delete(existing["id"])
+        else:
+            findings_list = [finding.model_dump()]
+
+        await self._scan_result_repo.create(
+            id=str(uuid4()),
+            session_id=session.id,
+            total_findings=len(findings_list),
+            raw_output=findings_list,
+            created_at=datetime.now(timezone.utc),
+        )
+
+        match_msg = f" (matched: {vuln_type})" if matched_injection else " (no exact match — will be scored on proximity)"
+
+        return ChatResponse(
+            text=(
+                f"✅ Finding submitted: {file_path}:{line_number}{match_msg}\n"
+                f"Total findings: {len(findings_list)}\n\n"
+                f"Submit more with /submit or run /grade when done."
+            )
+        )
+
+    # ------------------------------------------------------------------
     # /grade
     # ------------------------------------------------------------------
 
@@ -465,7 +586,16 @@ class MessageHandler:
                     text="Security scan failed. Check ArmorClaw installation."
                 )
         else:
-            logger.info("ArmorClaw scan skipped (SKIP_ARMORIQ=true) — grading with empty scan results")
+            logger.info("ArmorClaw scan skipped (SKIP_ARMORIQ=true) — using submitted findings")
+            # In demo mode, use findings the user submitted via /submit
+            existing_scan = await self._scan_result_repo.get_by_session(session.id)
+            if existing_scan:
+                for f in existing_scan["raw_output"]:
+                    if isinstance(f, dict):
+                        try:
+                            scan_findings.append(ScanFinding(**f))
+                        except Exception:
+                            pass
 
         # Store scan results
         try:
@@ -615,7 +745,8 @@ class MessageHandler:
                 f"Unknown command: {command}\n\n"
                 "Available commands:\n"
                 "• /train <repo_path> [difficulty] — Start a new training session with injected vulnerabilities\n"
-                "• /grade — Grade your most recent training session using ArmorClaw scan results\n"
+                "• /submit <filename> <line> — Report a vulnerability you found (e.g. /submit server 302)\n"
+                "• /grade — Grade your session based on submitted findings\n"
                 "• /stats — View your training statistics (score, sessions, average, best, weakest area)\n"
                 "• /leaderboard — View the top-ranked developers by cumulative score\n"
                 "• /optout — Toggle your opt-out status for training sessions"
