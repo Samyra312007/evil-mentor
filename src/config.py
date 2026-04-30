@@ -13,6 +13,8 @@ class Settings(BaseSettings):
 
     # LLM
     GEMINI_API_KEY: str = Field(default="", description="Google Gemini API key")
+    GROQ_API_KEY: str = Field(default="", description="Groq API key")
+    GROQ_API_KEY: str = Field(default="", description="Groq API key (fallback LLM)")
 
     # ArmorIQ
     ARMORIQ_API_KEY: str = Field(default="", description="ArmorIQ API key")
