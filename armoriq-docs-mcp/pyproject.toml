@@ -1,0 +1,15 @@
+[project]
+name = "armoriq-docs-mcp"
+version = "1.0.0"
+description = "MCP server for browsing and searching ArmorIQ documentation"
+requires-python = ">=3.10"
+dependencies = [
+    "mcp[cli]>=1.2.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project.scripts]
+armoriq-docs-mcp = "server:mcp.run"

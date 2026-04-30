@@ -1,0 +1,39 @@
+Problem Statement 1: Secure by Default                                                                                                                
+                                                                                                                                                        
+  Build any tool, workflow, or product that helps developers, teams, or businesses catch and fix security issues before they ship — making security     
+  invisible and automatic.                                                                                                                              
+                  
+  You must use:
+  - ArmorClaw — our open-source security claw that you can integrate into your pipelines and workflows
+  - ArmorIQ SDKs (TypeScript and/or Python) — to connect your solution to the ArmorIQ platform for policy enforcement, intent verification, and audit   
+  logging
+                                                                                                                                                        
+  ---             
+  Problem Statement 2: AI Agent for the Real World
+                                                                                                                                                        
+  Build an intelligent AI agent that solves a real-world problem — monitoring, compliance, incident response, onboarding, or anything else — and show
+  how AI can make security accessible to non-experts.                                                                                                   
+                  
+  You must use:
+  - ArmorIQ SDKs (TypeScript and/or Python) — your agent must integrate with ArmorIQ for policy-gated tool execution, delegation workflows, or audit
+  logging                                                                                                                                               
+  - ArmorClaw — to add security scanning or enforcement capabilities to your agent's toolset
+                                                                                                                                                        
+  ---             
+  Problem Statement 3: Open Category — Reimagine Security
+                                                                                                                                                        
+  Use ArmorClaw and the ArmorIQ platform however you want — build something that makes the internet safer, smarter, or easier to trust. If it's creative
+   and impactful, we want to see it.                                                                                                                    
+                  
+  You must use:
+  - ArmorClaw and/or ArmorIQ SDKs (TypeScript / Python) — your project must integrate with at least one of these to qualify
+  - The ArmorIQ platform — for policy management, enforcement, or any other capability it offers                                                        
+   
+  ---                                                                                                                                                   
+  Get Started     
+                                                                                                                                                        
+  - Head to platform.armoriq.ai to create your account, explore the dashboard, register agents, configure policies, and grab your API keys
+  - Read the SDK docs and integration guides at docs.armoriq.ai                                                                                         
+  - Watch the walkthrough video for a step-by-step guide on how to use ArmorClaw and ArmorIQ together — from SDK init to policy enforcement to audit    
+  logs
+
