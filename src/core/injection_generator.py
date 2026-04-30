@@ -208,7 +208,23 @@ class InjectionGenerator:
             + original_lines[target_idx + span :]
         )
 
-        path.write_text("".join(new_lines), encoding="utf-8")
+        new_content = "".join(new_lines)
+
+        # Validate that the modified file still parses (Python files only).
+        if suffix == ".py":
+            try:
+                compile(new_content, file_path, "exec")
+            except SyntaxError:
+                logger.warning(
+                    "Injection at %s:%d would break syntax — skipping",
+                    file_path,
+                    candidate.line_number,
+                )
+                raise ValueError(
+                    f"Injection at line {candidate.line_number} breaks syntax"
+                )
+
+        path.write_text(new_content, encoding="utf-8")
 
         return InjectionRecord(
             id=record_id,
