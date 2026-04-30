@@ -1,6 +1,7 @@
 # Environment & secrets
 .env
 *.env.local
+ myenv
 
 # Python
 __pycache__/
@@ -15,6 +16,7 @@ build/
 .venv/
 venv/
 env/
+myenv/
 
 # Database
 *.db
