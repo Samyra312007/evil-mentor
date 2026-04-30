@@ -219,31 +219,36 @@ class MessageHandler:
 
         # --- 5. ArmorIQ policy gate (Req 5.2, 5.3) ---
         session_id = uuid4()
-        plan_steps = [
-            {
-                "action": "create_training_branch",
-                "mcp": "evil-mentor-mcp",
-            },
-            {
-                "action": "inject_vulnerabilities",
-                "mcp": "evil-mentor-mcp",
-            },
-            {
-                "action": "commit_injections",
-                "mcp": "evil-mentor-mcp",
-            },
-        ]
+        intent_token = None
 
-        try:
-            intent_token = await self._armorclaw.capture_and_get_token(
-                plan_steps=plan_steps,
-                prompt=f"Evil Mentor training session {session_id} for user {user.username}",
-            )
-        except Exception as exc:
-            logger.error("ArmorIQ policy gate failed: %s", exc, exc_info=True)
-            return ChatResponse(
-                text="Policy verification failed. Please try again."
-            )
+        if not self._settings.SKIP_ARMORIQ:
+            plan_steps = [
+                {
+                    "action": "create_training_branch",
+                    "mcp": "evil-mentor-mcp",
+                },
+                {
+                    "action": "inject_vulnerabilities",
+                    "mcp": "evil-mentor-mcp",
+                },
+                {
+                    "action": "commit_injections",
+                    "mcp": "evil-mentor-mcp",
+                },
+            ]
+
+            try:
+                intent_token = await self._armorclaw.capture_and_get_token(
+                    plan_steps=plan_steps,
+                    prompt=f"Evil Mentor training session {session_id} for user {user.username}",
+                )
+            except Exception as exc:
+                logger.error("ArmorIQ policy gate failed: %s", exc, exc_info=True)
+                return ChatResponse(
+                    text="Policy verification failed. Please try again."
+                )
+        else:
+            logger.info("ArmorIQ policy gate skipped (SKIP_ARMORIQ=true)")
 
         # --- 6. Create training branch (Req 4.1) ---
         try:
@@ -349,7 +354,7 @@ class MessageHandler:
             session = TrainingSession(
                 id=session_id,
                 user_id=user.id,
-                intent_id=intent_token.token_id,
+                intent_id=intent_token.token_id if intent_token else "demo-mode",
                 repo_path=repo_path,
                 branch_name=branch_name,
                 difficulty=difficulty,
@@ -410,49 +415,57 @@ class MessageHandler:
             )
 
         # --- 3. ArmorIQ policy gate ---
-        plan_steps = [
-            {"action": "run_scan", "mcp": "armorclaw-mcp"},
-            {"action": "grade_session", "mcp": "evil-mentor-mcp"},
-        ]
+        intent_token = None
 
-        try:
-            intent_token = await self._armorclaw.capture_and_get_token(
-                plan_steps=plan_steps,
-                prompt=f"Evil Mentor grading session {session.id} for user {user.username}",
-            )
-        except Exception as exc:
-            logger.error("ArmorIQ policy gate failed for grading: %s", exc, exc_info=True)
-            return ChatResponse(
-                text="Policy verification failed. Please try again."
-            )
+        if not self._settings.SKIP_ARMORIQ:
+            plan_steps = [
+                {"action": "run_scan", "mcp": "armorclaw-mcp"},
+                {"action": "grade_session", "mcp": "evil-mentor-mcp"},
+            ]
+
+            try:
+                intent_token = await self._armorclaw.capture_and_get_token(
+                    plan_steps=plan_steps,
+                    prompt=f"Evil Mentor grading session {session.id} for user {user.username}",
+                )
+            except Exception as exc:
+                logger.error("ArmorIQ policy gate failed for grading: %s", exc, exc_info=True)
+                return ChatResponse(
+                    text="Policy verification failed. Please try again."
+                )
+        else:
+            logger.info("ArmorIQ policy gate skipped for grading (SKIP_ARMORIQ=true)")
 
         # --- 4. Run ArmorClaw scan ---
-        try:
-            scan_result = await self._armorclaw.invoke_action(
-                mcp_name="armorclaw-mcp",
-                action_name="run_scan",
-                intent_token=intent_token,
-                params={
-                    "repo_path": session.repo_path,
-                    "branch_name": session.branch_name,
-                },
-            )
+        scan_findings: list[ScanFinding] = []
 
-            # Parse scan findings from the invocation result
-            scan_findings: list[ScanFinding] = []
-            raw_findings = scan_result.result if hasattr(scan_result, "result") else []
-            if isinstance(raw_findings, list):
-                for f in raw_findings:
-                    if isinstance(f, dict):
-                        try:
-                            scan_findings.append(ScanFinding(**f))
-                        except Exception:
-                            logger.warning("Skipping malformed scan finding: %s", f)
-        except Exception as exc:
-            logger.error("ArmorClaw scan failed: %s", exc, exc_info=True)
-            return ChatResponse(
-                text="Security scan failed. Check ArmorClaw installation."
-            )
+        if not self._settings.SKIP_ARMORIQ and intent_token is not None:
+            try:
+                scan_result = await self._armorclaw.invoke_action(
+                    mcp_name="armorclaw-mcp",
+                    action_name="run_scan",
+                    intent_token=intent_token,
+                    params={
+                        "repo_path": session.repo_path,
+                        "branch_name": session.branch_name,
+                    },
+                )
+
+                raw_findings = scan_result.result if hasattr(scan_result, "result") else []
+                if isinstance(raw_findings, list):
+                    for f in raw_findings:
+                        if isinstance(f, dict):
+                            try:
+                                scan_findings.append(ScanFinding(**f))
+                            except Exception:
+                                logger.warning("Skipping malformed scan finding: %s", f)
+            except Exception as exc:
+                logger.error("ArmorClaw scan failed: %s", exc, exc_info=True)
+                return ChatResponse(
+                    text="Security scan failed. Check ArmorClaw installation."
+                )
+        else:
+            logger.info("ArmorClaw scan skipped (SKIP_ARMORIQ=true) — grading with empty scan results")
 
         # Store scan results
         try:

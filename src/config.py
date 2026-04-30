@@ -47,6 +47,12 @@ class Settings(BaseSettings):
         description="Comma-separated list of protected branch names",
     )
 
+    # Demo mode — skip ArmorIQ policy gate
+    SKIP_ARMORIQ: bool = Field(
+        default=False,
+        description="Skip ArmorIQ policy gate for demo/testing",
+    )
+
     @property
     def blocked_branch_set(self) -> set[str]:
         """Return blocked branches as a lowercase set."""
