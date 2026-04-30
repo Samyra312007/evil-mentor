@@ -15,6 +15,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
 from src.api.routes import router as api_router
+from src.api.mcp_endpoint import mcp_router
 from src.api.websocket import WebSocketNotifier
 from src.config import Settings
 from src.core.grading_engine import GradingEngine
@@ -163,6 +164,11 @@ app = FastAPI(title="Evil Mentor", lifespan=lifespan)
 
 # Include the REST API router (prefix /api)
 app.include_router(api_router)
+
+# Include the MCP endpoint for ArmorIQ platform registration
+app.include_router(mcp_router)
+
+# MCP server is run separately — see src/mcp_server.py
 
 
 # ---------------------------------------------------------------------------
